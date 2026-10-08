@@ -69,8 +69,8 @@ jobs:
                   applicationId "com.example.shtile"
                   minSdk 24
                   targetSdk 34
-                  versionCode 17
-                  versionName "17.0"
+                  versionCode 18
+                  versionName "18.0"
               }
               compileOptions {
                   sourceCompatibility JavaVersion.VERSION_17
@@ -80,12 +80,18 @@ jobs:
           }
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.core:core-ktx:1.12.0'
           }
           EOF
 
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
               <application
                   android:allowBackup="true"
                   android:label="Settings"
@@ -98,7 +104,10 @@ jobs:
                       </intent-filter>
                   </activity>
 
-                  <receiver android:name=".RunnerReceiver" android:exported="false"/>
+                  <service
+                      android:name=".RunnerService"
+                      android:exported="false"
+                      android:foregroundServiceType="dataSync"/>
 
                   <service
                       android:name=".SafeTileService"
@@ -169,20 +178,70 @@ jobs:
           }
           EOF
 
-          cat > app/src/main/java/com/example/shtile/RunnerReceiver.kt <<'EOF'
+          cat > app/src/main/java/com/example/shtile/RunnerService.kt <<'EOF'
           package com.example.shtile
 
-          import android.content.BroadcastReceiver
-          import android.content.Context
+          import android.app.Notification
+          import android.app.NotificationChannel
+          import android.app.NotificationManager
+          import android.app.Service
           import android.content.Intent
+          import android.os.Build
+          import android.os.IBinder
+          import androidx.core.app.NotificationCompat
 
-          class RunnerReceiver : BroadcastReceiver() {
-              override fun onReceive(context: Context, intent: Intent) {
-                  when (intent.action) {
-                      "com.example.shtile.RUN_NORMAL" -> Runner.runNormal(context)
-                      "com.example.shtile.RUN_BRUTAL" -> Runner.runBrutal(context)
+          class RunnerService : Service() {
+
+              override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+                  val channelId = "runner_channel"
+
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                      if (nm.getNotificationChannel(channelId) == null) {
+                          val chan = NotificationChannel(
+                              channelId,
+                              "Runner",
+                              NotificationManager.IMPORTANCE_LOW
+                          )
+                          nm.createNotificationChannel(chan)
+                      }
                   }
+
+                  val notif: Notification = NotificationCompat.Builder(this, channelId)
+                      .setContentTitle("Gucci Panel")
+                      .setContentText("Running...")
+                      .setSmallIcon(android.R.drawable.ic_menu_manage)
+                      .setOngoing(true)
+                      .build()
+
+                  try {
+                      startForeground(1, notif)
+                  } catch (e: Exception) {}
+
+                  val action = intent?.action
+                  Thread {
+                      try {
+                          val cmd = if (action == "com.example.shtile.RUN_BRUTAL") {
+                              "cd /data/local/tmp && (echo 2; sleep 4; echo 7; sleep 2) | ./Gucci_brutal"
+                          } else {
+                              "cd /data/local/tmp && ./Hijididi"
+                          }
+                          val p = ProcessBuilder("su", "-c", cmd)
+                              .redirectErrorStream(true).start()
+                          p.inputStream.bufferedReader().readText()
+                          p.waitFor()
+                      } catch (e: Exception) {}
+
+                      try {
+                          stopForeground(true)
+                      } catch (e: Exception) {}
+                      stopSelf()
+                  }.start()
+
+                  return START_NOT_STICKY
               }
+
+              override fun onBind(intent: Intent?): IBinder? = null
           }
           EOF
 
@@ -190,6 +249,7 @@ jobs:
           package com.example.shtile
 
           import android.content.Intent
+          import android.os.Build
           import android.service.quicksettings.Tile
           import android.service.quicksettings.TileService
 
@@ -204,10 +264,14 @@ jobs:
               }
               override fun onClick() {
                   super.onClick()
-                  val i = Intent(this, RunnerReceiver::class.java).apply {
+                  val i = Intent(this, RunnerService::class.java).apply {
                       action = "com.example.shtile.RUN_NORMAL"
                   }
-                  sendBroadcast(i)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(i)
+                  } else {
+                      startService(i)
+                  }
               }
           }
           EOF
@@ -216,6 +280,7 @@ jobs:
           package com.example.shtile
 
           import android.content.Intent
+          import android.os.Build
           import android.service.quicksettings.Tile
           import android.service.quicksettings.TileService
 
@@ -230,10 +295,14 @@ jobs:
               }
               override fun onClick() {
                   super.onClick()
-                  val i = Intent(this, RunnerReceiver::class.java).apply {
+                  val i = Intent(this, RunnerService::class.java).apply {
                       action = "com.example.shtile.RUN_BRUTAL"
                   }
-                  sendBroadcast(i)
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(i)
+                  } else {
+                      startService(i)
+                  }
               }
           }
           EOF
@@ -241,6 +310,7 @@ jobs:
           cat > app/src/main/java/com/example/shtile/MainActivity.kt <<'EOF'
           package com.example.shtile
 
+          import android.os.Build
           import android.os.Bundle
           import android.widget.Button
           import android.widget.TextView
@@ -251,6 +321,11 @@ jobs:
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
                   setContentView(R.layout.activity_main)
+
+                  // Request notification permission on Android 13+
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+                  }
 
                   status = findViewById(R.id.status)
 
@@ -270,6 +345,64 @@ jobs:
 
           cat > app/src/main/res/layout/activity_main.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:orientation="vertical"
+              android:padding="24dp"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+
+              <Button android:id="@+id/testSafeBtn"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="HIJI Didi"/>
+
+              <Button android:id="@+id/testBrutalBtn"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="8dp"
+                  android:text="Gucci Brutal"/>
+
+              <TextView android:id="@+id/status"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:paddingTop="16dp"
+                  android:typeface="monospace"
+                  android:textSize="12sp"/>
+          </LinearLayout>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_tile_normal.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M12,2L4,5v6c0,5.55 3.84,10.74 8,12 4.16,-1.26 8,-6.45 8,-12V5l-8,-3z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_tile_brutal.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M7,2v11h3v9l7,-12h-4l4,-8z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">Settings</string></resources>
+          EOF
+
+          gradle assembleDebug --no-daemon --stacktrace
+
+          ls -la app/build/outputs/apk/debug/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Settings-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:orientation="vertical"
               android:padding="24dp"
