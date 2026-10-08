@@ -403,6 +403,150 @@ jobs:
           name: Settings-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+                      updateTile()
+                  }
+              }
+              override fun onClick() {
+                  super.onClick()
+                  val i = Intent(this, RunnerService::class.java).apply {
+                      action = "com.example.shtile.RUN_NORMAL"
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(i)
+                  } else {
+                      startService(i)
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/shtile/BrutalTileService.kt <<'EOF'
+          package com.example.shtile
+
+          import android.content.Intent
+          import android.os.Build
+          import android.service.quicksettings.Tile
+          import android.service.quicksettings.TileService
+
+          class BrutalTileService : TileService() {
+              override fun onStartListening() {
+                  super.onStartListening()
+                  qsTile?.apply {
+                      label = "Turbo Mode"
+                      state = Tile.STATE_INACTIVE
+                      updateTile()
+                  }
+              }
+              override fun onClick() {
+                  super.onClick()
+                  val i = Intent(this, RunnerService::class.java).apply {
+                      action = "com.example.shtile.RUN_BRUTAL"
+                  }
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                      startForegroundService(i)
+                  } else {
+                      startService(i)
+                  }
+              }
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/shtile/MainActivity.kt <<'EOF'
+          package com.example.shtile
+
+          import android.os.Build
+          import android.os.Bundle
+          import android.widget.Button
+          import android.widget.TextView
+          import androidx.appcompat.app.AppCompatActivity
+
+          class MainActivity : AppCompatActivity() {
+              private lateinit var status: TextView
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+                  setContentView(R.layout.activity_main)
+
+                  // Request notification permission on Android 13+
+                  if (Build.VERSION.SDK_INT >= 33) {
+                      requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
+                  }
+
+                  status = findViewById(R.id.status)
+
+                  findViewById<Button>(R.id.testSafeBtn).setOnClickListener {
+                      status.text = "Running HIJI Didi..."
+                      Runner.runNormal(this)
+                  }
+                  findViewById<Button>(R.id.testBrutalBtn).setOnClickListener {
+                      status.text = "Running Gucci Brutal..."
+                      Runner.runBrutal(this)
+                  }
+
+                  status.text = "Ready to test."
+              }
+          }
+          EOF
+
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:orientation="vertical"
+              android:padding="24dp"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+
+              <Button android:id="@+id/testSafeBtn"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="HIJI Didi"/>
+
+              <Button android:id="@+id/testBrutalBtn"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:layout_marginTop="8dp"
+                  android:text="Gucci Brutal"/>
+
+              <TextView android:id="@+id/status"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:paddingTop="16dp"
+                  android:typeface="monospace"
+                  android:textSize="12sp"/>
+          </LinearLayout>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_tile_normal.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M12,2L4,5v6c0,5.55 3.84,10.74 8,12 4.16,-1.26 8,-6.45 8,-12V5l-8,-3z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_tile_brutal.xml <<'EOF'
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF"
+                  android:pathData="M7,2v11h3v9l7,-12h-4l4,-8z"/>
+          </vector>
+          EOF
+
+          cat > app/src/main/res/values/strings.xml <<'EOF'
+          <resources><string name="app_name">Settings</string></resources>
+          EOF
+
+          gradle assembleDebug --no-daemon --stacktrace
+
+          ls -la app/build/outputs/apk/debug/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Settings-debug
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
           <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
               android:orientation="vertical"
               android:padding="24dp"
